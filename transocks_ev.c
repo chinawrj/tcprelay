@@ -746,7 +746,7 @@ int main (int argc, char **argv) {
   int uid = 0;
   int gid = 0;
   
-  short bindport = 1211;
+  short bindport = 7070;
   char *bindhost = "0.0.0.0";
   
   short socksport = 9050;
