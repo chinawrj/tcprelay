@@ -1,3 +1,6 @@
+#MOD info
+Port from tranSOCKS_ev to implement one TCP relay with filter/ipset support
+
 tranSOCKS_ev - libevent-based, non-forking and transparent SOCKS5-Proxy
 
 Introduction
