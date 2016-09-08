@@ -29,6 +29,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <signal.h>
 #include <event.h>
 #include <evdns.h>
@@ -243,6 +244,39 @@ static void be_rdy_write (struct bufferevent *ev, void *arg) {
   bufferevent_enable (opp->ev, EV_READ);
 }
 
+static void ipset_whitelist_add(struct sockaddr_in *addr)
+{
+    uint8_t ipv4_addr[4];
+    char cmd[128];
+    int ret;
+
+    ipv4_addr[0] = (addr->sin_addr.s_addr & 0xFF);
+    ipv4_addr[1] = (addr->sin_addr.s_addr >> 8) & 0xFF;
+    ipv4_addr[2] = (addr->sin_addr.s_addr >> 16) & 0xFF;
+    ipv4_addr[3] = (addr->sin_addr.s_addr >> 24);
+
+    printf("ipaddress is %u.%u.%u.%u\n",
+        ipv4_addr[0],
+        ipv4_addr[1],
+        ipv4_addr[2],
+        ipv4_addr[3]
+    );
+    sprintf(cmd, "ipset add whitelist %u.%u.%u.%u",
+        ipv4_addr[0],
+        ipv4_addr[1],
+        ipv4_addr[2],
+        ipv4_addr[3]
+    );
+    printf("[ipset] %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
+static void ipset_blacklist_add(struct sockaddr_in *addr)
+{
+    return;
+}
+
 void start_passthrough(struct proxy_con *con);
 
 static void be_error (struct bufferevent *ev, short what, void *arg) {
@@ -264,6 +298,7 @@ static void be_error (struct bufferevent *ev, short what, void *arg) {
       endpoint_remove (&con->ep[EI_SERVER]);
       event_del (&con->connect_timeout);
 
+      ipset_whitelist_add(&(con->dest));
       return start_passthrough(con);
     }
 
@@ -395,6 +430,7 @@ static void svr_rdy_read (struct bufferevent *ev, void *arg) {
       resp [5] = (con->dest.sin_addr.s_addr >> 8) & 0xFF;
       resp [6] = (con->dest.sin_addr.s_addr >> 16) & 0xFF;
       resp [7] = (con->dest.sin_addr.s_addr >> 24);
+      ipset_whitelist_add(&(con->dest));
       resp [8] = con->dest.sin_port & 0xff; /* 2-Byte Port-Number */
       resp [9] = con->dest.sin_port >> 8;
       
