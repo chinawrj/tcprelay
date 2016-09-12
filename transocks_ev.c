@@ -838,221 +838,246 @@ error:
 
 int main (int argc, char **argv)
 {
-  struct sockaddr_in addr;
-  struct event ev_server, ev_white_fifo, ev_black_fifo;
-  int addrlen = sizeof (addr);
-  int serverfd = 0, whitelist_fd, blacklist_fd;
-  int on = 1;
-  int foreground = 0;
-  char *pidfile = NULL;
-  int pid_fd = -1;
-  int uid = 0;
-  int gid = 0;
-  
-  short bindport = 7070;
-  char *bindhost = "0.0.0.0";
-  char *white_list_fifo = "/tmp/white_list_fifo";  
-  char *black_list_fifo = "/tmp/black_list_fifo";  
-  
-  short socksport = 9050;
-  char c;
-  
-  unlink(white_list_fifo);
-  unlink(black_list_fifo);
-  mkfifo(white_list_fifo, 0666);
-  mkfifo(black_list_fifo, 0666);
-  
-  /* Parse the commandline */
-  while ((c = getopt (argc, argv, "vfp:H:s:S:c:P:u:g:th")) != (char)EOF)
-    switch (c) {
-      case 'f': /* Keep in foreground */
-        foreground = 1;
-        break;
-      
-      case 'p': /* Try to bind to this port */
-        if (!(bindport = atoi (optarg))) {
-          fprintf (stderr, "Invalid port %s\n", optarg);
-          return 1;
+    struct sockaddr_in addr;
+    struct event ev_server, ev_white_fifo, ev_black_fifo;
+    int addrlen = sizeof (addr);
+    int serverfd = 0, whitelist_fd, blacklist_fd;
+    int on = 1;
+    int foreground = 0;
+    char *pidfile = NULL;
+    int pid_fd = -1;
+    int uid = 0;
+    int gid = 0;
+
+    short bindport = 7070;
+    char *bindhost = "0.0.0.0";
+    char *white_list_fifo = "/tmp/white_list_fifo";  
+    char *black_list_fifo = "/tmp/black_list_fifo";  
+
+    short socksport = 9050;
+    char c;
+
+    unlink(white_list_fifo);
+    unlink(black_list_fifo);
+    mkfifo(white_list_fifo, 0666);
+    mkfifo(black_list_fifo, 0666);
+
+    /* Parse the commandline */
+    while ((c = getopt (argc, argv, "vfp:H:s:S:c:P:u:g:th")) != (char)EOF) {
+        switch (c) {
+            case 'f': /* Keep in foreground */
+            {
+                foreground = 1;
+            }
+            break;
+
+            case 'p': /* Try to bind to this port */
+            {
+                if (!(bindport = atoi (optarg))) {
+                    fprintf (stderr, "Invalid port %s\n", optarg);
+                    return 1;
+                }
+            }
+            break;
+
+            case 'H': /* Try to bind to this IP */
+            {
+                bindhost = optarg;
+            }
+            break;
+
+            case 's': /* Use this port on the SOCKS5-Proxy */
+            {
+                if (!(socksport = atoi (optarg))) {
+                    fprintf (stderr, "Invalid port %s\n", optarg);
+                    return 1;
+                }
+            }
+            break;
+
+            case 'c': /* Use this connection timeout */
+            {
+                if (!(connect_timeout = atoi (optarg))) {
+                    fprintf (stderr, "Invalid connection timeout %s\n", optarg);
+                    return 1;
+                }
+            }
+            break;
+
+            case 'v':
+            {
+                loglevel++;
+            }
+            break;
+
+            case 'S': /* Use this IP for the SOCKS5-Proxy */
+            {
+                sockshost = optarg;
+            }
+            break;
+
+            case 'P':
+            {
+                pidfile = optarg;
+            }
+            break;
+
+            case 'u':
+            {
+                uid = atoi (optarg);
+            }
+            break;
+
+            case 'g':
+            {
+                gid = atoi (optarg);
+            }
+            break;
+
+            case 't':
+            {
+                passthrough = 1;
+            }
+            break;
+
+            case 'h': /* Print help */
+            {
+                printf ("tranSOCKS-ev - libevent-based transparent SOCKS5-Proxy\n");
+                printf ("Usage: %s [-f] [-t] [-v] [-p port] [-H ip-address] [-s port] -S hostname [-c timeout] [-u uid] [-g gid] [-P file]\n\n", argv [0]);
+                printf ("\t-f\tDo not fork into background upon execution\n");
+                printf ("\t-p\tBind our server-socket to this port (default: 1211)\n");
+                printf ("\t-H\tListen on this IP-Address for incomming connections (default: all IP-Addresses)\n");
+                printf ("\t-s\tExpect SOCKS5-Server on this Port (default: 9050)\n");
+                printf ("\t-S\tExpect SOCKS5-Server at this address\n");
+                printf ("\t-c\tConnection timeout (default 60 seconds)\n");
+                printf ("\t-t\tPass through connections through if SOCKS5-Server down\n");
+                printf ("\t-u\tUser ID to run as\n");
+                printf ("\t-g\tGroup ID to run as\n");
+                printf ("\t-P\tWrite PID-file to this location\n");
+                printf ("\t-v\tVerbose operation (specify multiple times for additional verbosity)\n");
+                printf ("\n");
+            }
+            return 0;
         }
-        
-        break;
-      
-      case 'H': /* Try to bind to this IP */
-        bindhost = optarg;
-        break;
-      
-      case 's': /* Use this port on the SOCKS5-Proxy */
-        if (!(socksport = atoi (optarg))) {
-          fprintf (stderr, "Invalid port %s\n", optarg);
-          return 1;
+    }
+
+    if (sockshost == 0) {
+        fprintf (stderr, "You must specify -S\n");
+        return 1;
+    }
+
+    /* Handle the forking stuff */
+    if (foreground != 1) {
+        /* Try to fork into background */
+        if ((foreground = fork ()) < 0) {
+            perror("fork");
+            return 1;
         }
-        
-        break;
 
-      case 'c': /* Use this connection timeout */
-        if (!(connect_timeout = atoi (optarg))) {
-          fprintf (stderr, "Invalid connection timeout %s\n", optarg);
-          return 1;
+        /* Fork was successfull and we are the parent */
+        if (foreground) {
+            return 0;
         }
-        
-        break;
 
-      case 'v':
-        loglevel++;
-        break;
-      
-      case 'S': /* Use this IP for the SOCKS5-Proxy */
-        sockshost = optarg;
-        break;
+        /* Close our filehandles */
+        fclose (stdin);
+        fclose (stdout);
+        fclose (stderr);
 
-      case 'P':
-        pidfile = optarg;
-        break;
+        setsid ();
+        setpgrp ();
 
-      case 'u':
-        uid = atoi (optarg);
-        break;
-
-      case 'g':
-        gid = atoi (optarg);
-        break;
-
-      case 't':
-        passthrough = 1;
-        break;
-      
-      case 'h': /* Print help */
-        printf ("tranSOCKS-ev - libevent-based transparent SOCKS5-Proxy\n");
-        printf ("Usage: %s [-f] [-t] [-v] [-p port] [-H ip-address] [-s port] -S hostname [-c timeout] [-u uid] [-g gid] [-P file]\n\n", argv [0]);
-        printf ("\t-f\tDo not fork into background upon execution\n");
-        printf ("\t-p\tBind our server-socket to this port (default: 1211)\n");
-        printf ("\t-H\tListen on this IP-Address for incomming connections (default: all IP-Addresses)\n");
-        printf ("\t-s\tExpect SOCKS5-Server on this Port (default: 9050)\n");
-        printf ("\t-S\tExpect SOCKS5-Server at this address\n");
-        printf ("\t-c\tConnection timeout (default 60 seconds)\n");
-        printf ("\t-t\tPass through connections through if SOCKS5-Server down\n");
-        printf ("\t-u\tUser ID to run as\n");
-        printf ("\t-g\tGroup ID to run as\n");
-        printf ("\t-P\tWrite PID-file to this location\n");
-        printf ("\t-v\tVerbose operation (specify multiple times for additional verbosity)\n");
-        printf ("\n");
-        
-        return 0;
+        signal (SIGCHLD, SIG_IGN);
     }
 
-  if (sockshost == 0) {
-    fprintf (stderr, "You must specify -S\n");
-    return 1;
-  }
-  
-  /* Handle the forking stuff */
-  if (foreground != 1) {
-    /* Try to fork into background */
-    if ((foreground = fork ()) < 0) {
-      perror("fork");
-      return 1;
-    }
-    
-    /* Fork was successfull and we are the parent */
-    if (foreground)
-      return 0;
-    
-    /* Close our filehandles */
-    fclose (stdin);
-    fclose (stdout);
-    fclose (stderr);
-    
-    setsid ();
-    setpgrp ();
-    
-    signal (SIGCHLD, SIG_IGN);
-  }
-
-  /* Create pidfile for child */
-  if (pidfile != NULL) {
-    pid_fd = create_pidfile(pidfile);
-    if (pid_fd == -1) {
-      return 1;
-    }
-  }
-
-  /* Drop to unprivileged user and group if specified */
-  if (gid > 0)
-    if (setgid(gid) == -1) {
-      fprintf(stderr, "Failed to setgid(%d): %s (%d)\n", gid, strerror (errno), errno);
-      return 1;
+    /* Create pidfile for child */
+    if (pidfile != NULL) {
+        pid_fd = create_pidfile(pidfile);
+        if (pid_fd == -1) {
+            return 1;
+        }
     }
 
-  if (uid > 0)
-    if (setuid(uid) == -1) {
-      fprintf(stderr, "Failed to setuid(%d): %s (%d)\n", uid, strerror (errno), errno);
-      return 1;
+    /* Drop to unprivileged user and group if specified */
+    if (gid > 0) {
+        if (setgid(gid) == -1) {
+            fprintf(stderr, "Failed to setgid(%d): %s (%d)\n", gid, strerror (errno), errno);
+            return 1;
+        }
     }
-  whitelist_fd = open(white_list_fifo, O_RDWR|O_NONBLOCK);
-  blacklist_fd = open(black_list_fifo, O_RDWR|O_NONBLOCK);
-  
-  /* it appears libevent bufferevent can cause a PIPE */
-  signal (SIGPIPE, SIG_IGN);
 
-  /* Prepare address of SOCKS5-Server */
-  bzero (&socks_addr, sizeof (socks_addr));
-  socks_addr.sin_family = AF_INET;
-  socks_addr.sin_port = htons (socksport);
-  
-  if (inet_pton (AF_INET, sockshost, &socks_addr.sin_addr.s_addr) > 0)
-    sockshost = 0;
-  
-  /* Create our server socket */
-  if ((serverfd = socket (AF_INET, SOCK_STREAM, 0)) < 0) {
-    perror ("Could not create socket");
-    return 1;
-  }
-  
-  bzero (&addr, sizeof (addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons (bindport);
-  
-  if (inet_pton (AF_INET, bindhost, &addr.sin_addr.s_addr) <= 0) {
-    perror ("Could not parse Host");
-    return 1;
-  }
-  
-  setsockopt (serverfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof (on));
-  
-  if (bind (serverfd, (struct sockaddr *)&addr, sizeof (addr)) < 0) {
-    perror ("Could not bind our socket");
-    return 1;
-  }
-  
-  if (listen (serverfd, SOMAXCONN) < 0) {
-    perror ("listen failed");
-    return 1;
-  }
-  
-  /* Setup Event-Handing */
-  event_init ();
-  if (sockshost != 0) {
-    evdns_init ();
-    randfd = open ("/dev/urandom", O_RDONLY);
-    if (randfd == -1)
-      fprintf (stderr, "can't open /dev/urandom: %s (%d). continuing, but will not randomize dns replies.\n");
-  }    
- 
-  event_set (&ev_server, serverfd, EV_READ, new_connection, &ev_server);
-  event_add (&ev_server, NULL);
-  
-  event_set (&ev_white_fifo, whitelist_fd, EV_READ | EV_PERSIST, white_list_handler, &ev_white_fifo);
-  event_add (&ev_white_fifo, NULL);
+    if (uid > 0) {
+        if (setuid(uid) == -1) {
+            fprintf(stderr, "Failed to setuid(%d): %s (%d)\n", uid, strerror (errno), errno);
+            return 1;
+        }
+    }
+    whitelist_fd = open(white_list_fifo, O_RDWR|O_NONBLOCK);
+    blacklist_fd = open(black_list_fifo, O_RDWR|O_NONBLOCK);
 
-  event_set (&ev_black_fifo, blacklist_fd, EV_READ | EV_PERSIST, black_list_handler, &ev_black_fifo);
-  event_add (&ev_black_fifo, NULL);
+    /* it appears libevent bufferevent can cause a PIPE */
+    signal (SIGPIPE, SIG_IGN);
 
-  event_dispatch ();
+    /* Prepare address of SOCKS5-Server */
+    bzero(&socks_addr, sizeof (socks_addr));
+    socks_addr.sin_family = AF_INET;
+    socks_addr.sin_port = htons (socksport);
 
-  if (pid_fd > 0) {
-    close(pid_fd);
-  }
-  
-  return 0;
+    if (inet_pton (AF_INET, sockshost, &socks_addr.sin_addr.s_addr) > 0) {
+        sockshost = 0;
+    }
+
+    /* Create our server socket */
+    if ((serverfd = socket (AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror ("Could not create socket");
+        return 1;
+    }
+
+    bzero(&addr, sizeof (addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons (bindport);
+
+    if (inet_pton (AF_INET, bindhost, &addr.sin_addr.s_addr) <= 0) {
+        perror ("Could not parse Host");
+        return 1;
+    }
+
+    setsockopt (serverfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof (on));
+
+    if (bind (serverfd, (struct sockaddr *)&addr, sizeof (addr)) < 0) {
+        perror ("Could not bind our socket");
+        return 1;
+    }
+
+    if (listen (serverfd, SOMAXCONN) < 0) {
+        perror ("listen failed");
+        return 1;
+    }
+
+    /* Setup Event-Handing */
+    event_init ();
+    if (sockshost != 0) {
+        evdns_init ();
+        randfd = open ("/dev/urandom", O_RDONLY);
+        if (randfd == -1) {
+            fprintf (stderr, "can't open /dev/urandom: %s (%d). continuing, but will not randomize dns replies.\n");
+        }
+    }
+
+    event_set(&ev_server, serverfd, EV_READ, new_connection, &ev_server);
+    event_add(&ev_server, NULL);
+
+    event_set(&ev_white_fifo, whitelist_fd, EV_READ | EV_PERSIST, white_list_handler, &ev_white_fifo);
+    event_add(&ev_white_fifo, NULL);
+
+    event_set(&ev_black_fifo, blacklist_fd, EV_READ | EV_PERSIST, black_list_handler, &ev_black_fifo);
+    event_add(&ev_black_fifo, NULL);
+
+    event_dispatch();
+
+    if (pid_fd > 0) {
+        close(pid_fd);
+    }
+    return 0;
 }
 
