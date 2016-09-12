@@ -729,9 +729,35 @@ void new_connection (int fd, short event, void *arg) {
 
   return;
 
-error:
-  close (fd_client);
-  free (con);
+error: close (fd_client); free (con);
+}
+
+void white_list_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128];
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 127);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+    }
+    printf("whitelist [%d]: %s", ret, ret > 0 ? buffer : "");
+}
+
+void black_list_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128];
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 128);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+    }
+    printf("blacklist [%d]: %s", ret, ret > 0 ? buffer : "");
 }
 
 int create_pidfile(const char *path)
@@ -773,9 +799,9 @@ error:
 int main (int argc, char **argv)
 {
   struct sockaddr_in addr;
-  struct event ev_server;
+  struct event ev_server, ev_white_fifo, ev_black_fifo;
   int addrlen = sizeof (addr);
-  int serverfd = 0;
+  int serverfd = 0, whitelist_fd, blacklist_fd;
   int on = 1;
   int foreground = 0;
   char *pidfile = NULL;
@@ -785,10 +811,16 @@ int main (int argc, char **argv)
   
   short bindport = 7070;
   char *bindhost = "0.0.0.0";
+  char *white_list_fifo = "/tmp/white_list_fifo";  
+  char *black_list_fifo = "/tmp/black_list_fifo";  
   
   short socksport = 9050;
-  
   char c;
+  
+  unlink(white_list_fifo);
+  unlink(black_list_fifo);
+  mkfifo(white_list_fifo, 0666);
+  mkfifo(black_list_fifo, 0666);
   
   /* Parse the commandline */
   while ((c = getopt (argc, argv, "vfp:H:s:S:c:P:u:g:th")) != (char)EOF)
@@ -916,6 +948,8 @@ int main (int argc, char **argv)
       fprintf(stderr, "Failed to setuid(%d): %s (%d)\n", uid, strerror (errno), errno);
       return 1;
     }
+  whitelist_fd = open(white_list_fifo, O_RDWR|O_NONBLOCK);
+  blacklist_fd = open(black_list_fifo, O_RDWR|O_NONBLOCK);
   
   /* it appears libevent bufferevent can cause a PIPE */
   signal (SIGPIPE, SIG_IGN);
@@ -967,6 +1001,12 @@ int main (int argc, char **argv)
   event_set (&ev_server, serverfd, EV_READ, new_connection, &ev_server);
   event_add (&ev_server, NULL);
   
+  event_set (&ev_white_fifo, whitelist_fd, EV_READ | EV_PERSIST, white_list_handler, &ev_white_fifo);
+  event_add (&ev_white_fifo, NULL);
+
+  event_set (&ev_black_fifo, blacklist_fd, EV_READ | EV_PERSIST, black_list_handler, &ev_black_fifo);
+  event_add (&ev_black_fifo, NULL);
+
   event_dispatch ();
 
   if (pid_fd > 0) {
