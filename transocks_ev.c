@@ -732,16 +732,56 @@ void new_connection (int fd, short event, void *arg) {
 error: close (fd_client); free (con);
 }
 
+static void domain_lookup_done(int result, char type, int count, int ttl, void *addresses, void *arg)
+{
+    unsigned char c;
+    int ret, i;
+
+    if (result != DNS_ERR_NONE) {
+        fprintf(stderr, "DNS lookup failed: %s", evdns_err_to_string(result));
+        return;
+    }
+    if (type != EVDNS_TYPE_A) {
+        fprintf(stderr, "DNS lookup failed: bad record type");
+        return;
+    }
+    if (count < 1) {
+        fprintf(stderr, "DNS lookup failed: no address");
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        printf("%s, IP[%d]: %u.%u.%u.%u\n",
+            (char*)arg,
+            i,
+            ((uint32_t*)(addresses))[i] & 0xff,
+            (((uint32_t*)(addresses))[i] >> 8) & 0xff,
+            (((uint32_t*)(addresses))[i] >> 16) & 0xff,
+            (((uint32_t*)(addresses))[i] >> 24) & 0xff
+        );
+    }
+}
+
+static void domain_lookup(char *domain, char *ipset)
+{
+    printf("lookup dns %s\n", domain);
+    evdns_resolve_ipv4(domain, 0, &domain_lookup_done, domain);
+}
+
 void white_list_handler(int fd, short event, void *arg) 
 {
     int ret;
-    char buffer[128];
+    char buffer[128], *newline;
 
     /* Reschedule ourself */
     //event_add (arg, NULL);
     ret = read(fd, buffer, 127);
     if (ret > 0) {
         buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        domain_lookup(buffer, "whitelist");
     }
     printf("whitelist [%d]: %s", ret, ret > 0 ? buffer : "");
 }
@@ -749,13 +789,18 @@ void white_list_handler(int fd, short event, void *arg)
 void black_list_handler(int fd, short event, void *arg) 
 {
     int ret;
-    char buffer[128];
+    char buffer[128], *newline;
 
     /* Reschedule ourself */
     //event_add (arg, NULL);
     ret = read(fd, buffer, 128);
     if (ret > 0) {
         buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        domain_lookup(buffer, "blacklist");
     }
     printf("blacklist [%d]: %s", ret, ret > 0 ? buffer : "");
 }
