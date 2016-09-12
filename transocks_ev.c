@@ -669,61 +669,65 @@ static void dns_done (int result, char type, int count, int ttl, void *addresses
   start_socks (con);
 }
 
-void new_connection (int fd, short event, void *arg) {
-  struct sockaddr_in6 client_addr;
-  int fd_client;
-  struct proxy_con *con;
-  char dststr[INET6_ADDRSTRLEN + 32];
-  int len = 0;
-  
-  /* Allocate memory for new structure */
-  con = malloc (sizeof (struct proxy_con));
-  if (con == 0) {
-    perror ("malloc failed");
-    return;
-  }
-  bzero (con, sizeof (struct proxy_con));
-  con->id = ++last_connid;
-  clock_gettime (CLOCK_MONOTONIC, &con->conn_time);
-  
-  /* Reschedule ourself */
-  event_add (arg, NULL);
-  
-  /* Accept incoming connection */
-  memset (&client_addr, 0, sizeof(client_addr));
-  if ((fd_client = accept (fd, (struct sockaddr *)&client_addr, &len)) <= 0) {
-    free (con);
-    return;
-  }
+void new_connection(int fd, short event, void *arg)
+{
+    struct sockaddr_in6 client_addr;
+    int fd_client;
+    struct proxy_con *con;
+    char dststr[INET6_ADDRSTRLEN + 32];
+    int len = 0;
 
-  con->ep[EI_CLIENT].fd = fd_client; 
-  con->ep[EI_SERVER].fd = -1;
-
-  /* Set socket to nonblocking mode */
-  if (nonblock (fd_client, 1) != 0)
-    goto error;
-
-  /* Determine where we should connect to */
-  if (getsockopt (fd_client, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *)&con->dest, &len) != 0) {
-    perror ("Could not determine socket-destination");
-    goto error;
-  }
-
-  sockaddr_in_str (dststr, (struct sockaddr *)&con->dest);
-  client_error (con, 1, "-> %s", dststr);
-
-  if (sockshost) {
-    client_error (con, 3, "resolving SOCKS5 host %s in DNS", sockshost);
-    if (evdns_resolve_ipv4 (sockshost, 0, &dns_done, con) != 0) {
-      client_error (con, 1, "failed to transmit DNS query for %s", sockshost);
-      goto error;
+    /* Allocate memory for new structure */
+    con = malloc(sizeof (struct proxy_con));
+    if (con == 0) {
+        perror ("malloc failed");
+        return;
     }
-  } else 
-    start_socks (con);
+    bzero(con, sizeof (struct proxy_con));
+    con->id = ++last_connid;
+    clock_gettime(CLOCK_MONOTONIC, &con->conn_time);
 
-  return;
+    /* Reschedule ourself */
+    event_add(arg, NULL);
 
-error: close (fd_client); free (con);
+    /* Accept incoming connection */
+    memset(&client_addr, 0, sizeof(client_addr));
+    if ((fd_client = accept(fd, (struct sockaddr *)&client_addr, &len)) <= 0) {
+        free (con);
+        return;
+    }
+
+    con->ep[EI_CLIENT].fd = fd_client; 
+    con->ep[EI_SERVER].fd = -1;
+
+    /* Set socket to nonblocking mode */
+    if (nonblock(fd_client, 1) != 0) {
+        goto error;
+    }
+
+    /* Determine where we should connect to */
+    if (getsockopt(fd_client, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *)&con->dest, &len) != 0) {
+        perror ("Could not determine socket-destination");
+        goto error;
+    }
+
+    sockaddr_in_str(dststr, (struct sockaddr *)&con->dest);
+    client_error(con, 1, "-> %s", dststr);
+
+    if (sockshost) {
+        client_error(con, 3, "resolving SOCKS5 host %s in DNS", sockshost);
+        if (evdns_resolve_ipv4(sockshost, 0, &dns_done, con) != 0) {
+            client_error(con, 1, "failed to transmit DNS query for %s", sockshost);
+            goto error;
+        }
+    } else {
+        start_socks(con);
+    }
+    return;
+
+error:
+    close(fd_client);
+    free(con);
 }
 
 static void domain_lookup_done(int result, char type, int count, int ttl, void *addresses, void *arg)
