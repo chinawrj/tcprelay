@@ -770,7 +770,8 @@ error:
   return -1;
 }
 
-int main (int argc, char **argv) {
+int main (int argc, char **argv)
+{
   struct sockaddr_in addr;
   struct event ev_server;
   int addrlen = sizeof (addr);
