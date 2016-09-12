@@ -244,16 +244,16 @@ static void be_rdy_write (struct bufferevent *ev, void *arg) {
   bufferevent_enable (opp->ev, EV_READ);
 }
 
-static void ipset_whitelist_add(struct sockaddr_in *addr)
+static void ipset_whitelist_add(uint32_t s_addr, char *name)
 {
     uint8_t ipv4_addr[4];
     char cmd[128];
     int ret;
 
-    ipv4_addr[0] = (addr->sin_addr.s_addr & 0xFF);
-    ipv4_addr[1] = (addr->sin_addr.s_addr >> 8) & 0xFF;
-    ipv4_addr[2] = (addr->sin_addr.s_addr >> 16) & 0xFF;
-    ipv4_addr[3] = (addr->sin_addr.s_addr >> 24);
+    ipv4_addr[0] = (s_addr & 0xFF);
+    ipv4_addr[1] = (s_addr >> 8) & 0xFF;
+    ipv4_addr[2] = (s_addr >> 16) & 0xFF;
+    ipv4_addr[3] = (s_addr >> 24);
 
     printf("ipaddress is %u.%u.%u.%u\n",
         ipv4_addr[0],
@@ -261,7 +261,8 @@ static void ipset_whitelist_add(struct sockaddr_in *addr)
         ipv4_addr[2],
         ipv4_addr[3]
     );
-    sprintf(cmd, "ipset add whitelist %u.%u.%u.%u",
+    sprintf(cmd, "ipset add %s %u.%u.%u.%u",
+        name,
         ipv4_addr[0],
         ipv4_addr[1],
         ipv4_addr[2],
@@ -269,11 +270,6 @@ static void ipset_whitelist_add(struct sockaddr_in *addr)
     );
     printf("[ipset] %s\n", cmd);
     ret = system(cmd);
-    return;
-}
-
-static void ipset_blacklist_add(struct sockaddr_in *addr)
-{
     return;
 }
 
@@ -298,7 +294,6 @@ static void be_error (struct bufferevent *ev, short what, void *arg) {
       endpoint_remove (&con->ep[EI_SERVER]);
       event_del (&con->connect_timeout);
 
-      ipset_whitelist_add(&(con->dest));
       return start_passthrough(con);
     }
 
@@ -430,7 +425,6 @@ static void svr_rdy_read (struct bufferevent *ev, void *arg) {
       resp [5] = (con->dest.sin_addr.s_addr >> 8) & 0xFF;
       resp [6] = (con->dest.sin_addr.s_addr >> 16) & 0xFF;
       resp [7] = (con->dest.sin_addr.s_addr >> 24);
-      ipset_whitelist_add(&(con->dest));
       resp [8] = con->dest.sin_port & 0xff; /* 2-Byte Port-Number */
       resp [9] = con->dest.sin_port >> 8;
       
@@ -758,13 +752,14 @@ static void domain_lookup_done(int result, char type, int count, int ttl, void *
             (((uint32_t*)(addresses))[i] >> 16) & 0xff,
             (((uint32_t*)(addresses))[i] >> 24) & 0xff
         );
+        ipset_whitelist_add(((uint32_t*)(addresses))[i], (char*)arg);
     }
 }
 
 static void domain_lookup(char *domain, char *ipset)
 {
     printf("lookup dns %s\n", domain);
-    evdns_resolve_ipv4(domain, 0, &domain_lookup_done, domain);
+    evdns_resolve_ipv4(domain, 0, &domain_lookup_done, ipset);
 }
 
 void white_list_handler(int fd, short event, void *arg) 
@@ -783,7 +778,7 @@ void white_list_handler(int fd, short event, void *arg)
         }
         domain_lookup(buffer, "whitelist");
     }
-    printf("whitelist [%d]: %s", ret, ret > 0 ? buffer : "");
+    printf("whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
 
 void black_list_handler(int fd, short event, void *arg) 
@@ -802,7 +797,7 @@ void black_list_handler(int fd, short event, void *arg)
         }
         domain_lookup(buffer, "blacklist");
     }
-    printf("blacklist [%d]: %s", ret, ret > 0 ? buffer : "");
+    printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
 
 int create_pidfile(const char *path)
