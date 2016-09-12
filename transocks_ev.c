@@ -802,38 +802,37 @@ void black_list_handler(int fd, short event, void *arg)
 
 int create_pidfile(const char *path)
 {
-  int fd;
-  char buf[128];
+    int fd;
+    char buf[128];
 
-  fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
 
-  if (fd == -1) {
-    fprintf(stderr, "Failed to open() PID file %s: %s (%d)\n", path, strerror (errno), errno);
-    goto error;
-  }
+    if (fd == -1) {
+        fprintf(stderr, "Failed to open() PID file %s: %s (%d)\n", path, strerror (errno), errno);
+        goto error;
+    }
 
-  if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
-    fprintf(stderr, "Failed to flock() PID file %s: %s (%d)\n", path, strerror (errno), errno);
-    goto error;
-  }
+    if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
+        fprintf(stderr, "Failed to flock() PID file %s: %s (%d)\n", path, strerror (errno), errno);
+        goto error;
+    }
 
-  if (ftruncate(fd, 0) == -1) {
-    fprintf(stderr, "Failed to ftruncate() PID file %s: %s (%d)\n", path, strerror (errno), errno);
-    goto error;
-  }
+    if (ftruncate(fd, 0) == -1) {
+        fprintf(stderr, "Failed to ftruncate() PID file %s: %s (%d)\n", path, strerror (errno), errno);
+        goto error;
+    }
 
-  snprintf(buf, sizeof buf, "%ld\n", (long)getpid());
-  if (write(fd, buf, strlen(buf)) != strlen(buf)) {
-    fprintf(stderr, "Failed to write() PID file %s: %s (%d)\n", path, strerror (errno), errno);
-    goto error;
-  }
-
-  return fd;
+    snprintf(buf, sizeof buf, "%ld\n", (long)getpid());
+    if (write(fd, buf, strlen(buf)) != strlen(buf)) {
+        fprintf(stderr, "Failed to write() PID file %s: %s (%d)\n", path, strerror (errno), errno);
+        goto error;
+    }
+    return fd;
 
 error:
-  if (fd != -1)
-    close(fd);
-  return -1;
+    if (fd != -1)
+        close(fd);
+    return -1;
 }
 
 int main (int argc, char **argv)
