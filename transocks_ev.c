@@ -244,7 +244,7 @@ static void be_rdy_write (struct bufferevent *ev, void *arg) {
   bufferevent_enable (opp->ev, EV_READ);
 }
 
-static void ipset_whitelist_add(uint32_t s_addr, char *name)
+static void ipset_list_add(uint32_t s_addr, char *name)
 {
     uint8_t ipv4_addr[4];
     char cmd[128];
@@ -262,6 +262,35 @@ static void ipset_whitelist_add(uint32_t s_addr, char *name)
         ipv4_addr[3]
     );
     sprintf(cmd, "ipset add %s %u.%u.%u.%u",
+        name,
+        ipv4_addr[0],
+        ipv4_addr[1],
+        ipv4_addr[2],
+        ipv4_addr[3]
+    );
+    printf("[ipset] %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
+static void ipset_list_del(uint32_t s_addr, char *name)
+{
+    uint8_t ipv4_addr[4];
+    char cmd[128];
+    int ret;
+
+    ipv4_addr[0] = (s_addr & 0xFF);
+    ipv4_addr[1] = (s_addr >> 8) & 0xFF;
+    ipv4_addr[2] = (s_addr >> 16) & 0xFF;
+    ipv4_addr[3] = (s_addr >> 24);
+
+    printf("ipaddress is %u.%u.%u.%u\n",
+        ipv4_addr[0],
+        ipv4_addr[1],
+        ipv4_addr[2],
+        ipv4_addr[3]
+    );
+    sprintf(cmd, "ipset del %s %u.%u.%u.%u",
         name,
         ipv4_addr[0],
         ipv4_addr[1],
@@ -756,13 +785,14 @@ static void domain_lookup_done(int result, char type, int count, int ttl, void *
             (((uint32_t*)(addresses))[i] >> 16) & 0xff,
             (((uint32_t*)(addresses))[i] >> 24) & 0xff
         );
-        ipset_whitelist_add(((uint32_t*)(addresses))[i], (char*)arg);
+        ipset_list_del(((uint32_t*)(addresses))[i], arg ? "whitelist" : "blacklist");//remove IP from blacklist
+        ipset_list_add(((uint32_t*)(addresses))[i], arg ? "blacklist" : "whitelist");//add IP to whitelist
     }
 }
 
 static void domain_lookup(char *domain, char *ipset)
 {
-    printf("lookup dns %s\n", domain);
+    printf("lookup dns %s, for %s\n", domain, ipset ? "blacklist" : "whitelist");
     evdns_resolve_ipv4(domain, 0, &domain_lookup_done, ipset);
 }
 
@@ -780,7 +810,7 @@ void white_list_handler(int fd, short event, void *arg)
         if (newline) {
             *newline = '\0';
         }
-        domain_lookup(buffer, "whitelist");
+        domain_lookup(buffer, NULL);
     }
     printf("whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
