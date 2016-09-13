@@ -541,11 +541,12 @@ static void be_setcb_connect (struct bufferevent *ev, struct proxy_con *con) {
   bufferevent_setcb (ev, &svr_rdy_read, 0, &be_error, con);
 }
 
-static void client_connect_timeout (int fd, short event, void *arg) {
-  struct proxy_con *con = arg;
+static void client_connect_timeout(int fd, short event, void *arg)
+{
+    struct proxy_con *con = arg;
 
-  /* shut down client */
-  client_remove (con, "connecting timed out");
+    /* shut down client */
+    client_remove (con, "connecting timed out");
 }
 
 static int nonblock(int fd, int mode)
