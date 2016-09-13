@@ -561,24 +561,23 @@ static int nonblock (int fd, int mode) {
   return fcntl (fd, F_SETFL, data);
 }
 
-static void sockaddr_in_str (char *buf, const struct sockaddr *sa) {
-  char pbuf[INET6_ADDRSTRLEN];
-  unsigned short port = 0;
-  int af = sa->sa_family;
+static void sockaddr_in_str(char *buf, const struct sockaddr *sa)
+{
+    char pbuf[INET6_ADDRSTRLEN];
+    unsigned short port = 0;
+    int af = sa->sa_family;
 
-  if (af == AF_INET) {
-    inet_ntop (af, &(((const struct sockaddr_in *)sa)->sin_addr), pbuf, sizeof(pbuf));
-    port = ((const struct sockaddr_in *)sa)->sin_port;
-    sprintf (buf, "%s:%d", pbuf, ntohs(port));
-  }
-  else if (af == AF_INET6) {
-    inet_ntop (af, &(((const struct sockaddr_in6 *)sa)->sin6_addr), pbuf, sizeof(pbuf));
-    port = ((const struct sockaddr_in6 *)sa)->sin6_port;
-    sprintf (buf, "[%s]:%d", pbuf, ntohs(port));
-  }
-  else {
-    sprintf (buf, "unknown");
-  }
+    if (af == AF_INET) {
+        inet_ntop(af, &(((const struct sockaddr_in *)sa)->sin_addr), pbuf, sizeof(pbuf));
+        port = ((const struct sockaddr_in *)sa)->sin_port;
+        sprintf(buf, "%s:%d", pbuf, ntohs(port));
+    } else if (af == AF_INET6) {
+        inet_ntop(af, &(((const struct sockaddr_in6 *)sa)->sin6_addr), pbuf, sizeof(pbuf));
+        port = ((const struct sockaddr_in6 *)sa)->sin6_port;
+        sprintf(buf, "[%s]:%d", pbuf, ntohs(port));
+    } else {
+        sprintf (buf, "unknown");
+    }
 }
 
 void start_socks(struct proxy_con *con)
