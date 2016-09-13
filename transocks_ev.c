@@ -548,17 +548,19 @@ static void client_connect_timeout (int fd, short event, void *arg) {
   client_remove (con, "connecting timed out");
 }
 
-static int nonblock (int fd, int mode) {
-  int data;
+static int nonblock(int fd, int mode)
+{
+    int data;
 
-  data = fcntl (fd, F_GETFL);
-  if (data == -1)
-    return -1;
-  if (mode)
-    data |= O_NONBLOCK;
-  else
-    data &= ~O_NONBLOCK;
-  return fcntl (fd, F_SETFL, data);
+    data = fcntl(fd, F_GETFL);
+    if (data == -1)
+        return -1;
+    if (mode) {
+        data |= O_NONBLOCK;
+    } else {
+        data &= ~O_NONBLOCK;
+    }
+    return fcntl(fd, F_SETFL, data);
 }
 
 static void sockaddr_in_str(char *buf, const struct sockaddr *sa)
