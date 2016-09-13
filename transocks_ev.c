@@ -668,34 +668,35 @@ pt_do_connect:
   timeout_add (&con->connect_timeout, &conn_timeout_tv);
 }
 
-static void dns_done (int result, char type, int count, int ttl, void *addresses, void *arg) {
-  struct proxy_con *con = arg;
-  unsigned char c;
-  int ret, i;
+static void dns_done(int result, char type, int count, int ttl, void *addresses, void *arg)
+{
+    struct proxy_con *con = arg;
+    unsigned char c;
+    int ret, i;
 
-  if (result != DNS_ERR_NONE) 
-    return client_remove (con, "DNS lookup failed: %s", evdns_err_to_string (result));
+    if (result != DNS_ERR_NONE) 
+        return client_remove (con, "DNS lookup failed: %s", evdns_err_to_string (result));
 
-  if (type != EVDNS_TYPE_A)
-    return client_remove (con, "DNS lookup failed: bad record type");
+    if (type != EVDNS_TYPE_A)
+        return client_remove (con, "DNS lookup failed: bad record type");
 
-  if (count < 1)
-    return client_remove (con, "DNS lookup failed: no address");
+    if (count < 1)
+        return client_remove (con, "DNS lookup failed: no address");
 
-  /* pick address at random */
-  if (count > 1 && randfd != -1) {
-    ret = read (randfd, &c, 1);
-    if (ret == 1) {
-      i = c % count;  
+    /* pick address at random */
+    if (count > 1 && randfd != -1) {
+        ret = read (randfd, &c, 1);
+        if (ret == 1) {
+            i = c % count;  
+        } else {
+            i = 0;
+        }
+    } else {
+        i = 0;
     }
-    else
-      i = 0;
-  }
-  else
-    i = 0;
 
-  socks_addr.sin_addr.s_addr = ((uint32_t *)addresses)[i]; 
-  start_socks (con);
+    socks_addr.sin_addr.s_addr = ((uint32_t *)addresses)[i]; 
+    start_socks (con);
 }
 
 void new_connection(int fd, short event, void *arg)
