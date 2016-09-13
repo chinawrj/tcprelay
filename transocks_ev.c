@@ -628,44 +628,45 @@ do_connect:
   bufferevent_enable (con->ep[EI_SERVER].ev, EV_READ);
 }
 
-void start_passthrough(struct proxy_con *con) {
+void start_passthrough(struct proxy_con *con)
+{
+    struct timeval conn_timeout_tv;
+    int fd_server, fd_client = con->ep[EI_CLIENT].fd;
+    char dststr[INET6_ADDRSTRLEN + 32];
 
-  struct timeval conn_timeout_tv;
-  int fd_server, fd_client = con->ep[EI_CLIENT].fd;
-  char dststr[INET6_ADDRSTRLEN + 32];
+    sockaddr_in_str(dststr, (struct sockaddr *)&con->dest);
+    client_error(con, 2, "connecting directly to host %s", dststr);
 
-  sockaddr_in_str (dststr, (struct sockaddr *)&con->dest);
-  client_error (con, 2, "connecting directly to host %s", dststr);
+    /* prepare socket */
+    fd_server = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd_server < 0)
+        return client_remove(con, "socket failed: %s (%d)", strerror(errno), errno);
 
-  /* prepare socket */
-  fd_server = socket (AF_INET, SOCK_STREAM, 0);
-  if (fd_server < 0)
-    return client_remove (con, "socket failed: %s (%d)", strerror(errno), errno);
-
-  /* change sockets to non-blocking mode */
-  if (nonblock (fd_server, 1) != 0)
-    return client_remove (con, "nonblock failed: %s (%d)", strerror(errno), errno);
+    /* change sockets to non-blocking mode */
+    if (nonblock(fd_server, 1) != 0)
+        return client_remove(con, "nonblock failed: %s (%d)", strerror(errno), errno);
 
 pt_do_connect:
-  if (connect (fd_server, (struct sockaddr *)&con->dest, sizeof (con->dest)) != 0) {
-    if (errno == EINTR)
-      goto pt_do_connect;
-    else if (errno == EINPROGRESS)
-      /* nothing */;
-    else
-      return client_remove (con, "pass-through connect failed: %s (%d)", strerror(errno), errno);
-  }
+    if (connect(fd_server, (struct sockaddr *)&con->dest, sizeof (con->dest)) != 0) {
+        if (errno == EINTR) {
+            goto pt_do_connect;
+        } else if (errno == EINPROGRESS) {
+        /* nothing */;
+        } else {
+            return client_remove (con, "pass-through connect failed: %s (%d)", strerror(errno), errno);
+        }
+    }
 
-  /* Setup events for this new connection */
-  endpoint_init (con, EI_SERVER, fd_server);
-  bufferevent_setcb (con->ep[EI_SERVER].ev, 0, pt_svr_rdy_write, &pt_be_error, con);
-  bufferevent_enable (con->ep[EI_SERVER].ev, EV_WRITE);
+    /* Setup events for this new connection */
+    endpoint_init(con, EI_SERVER, fd_server);
+    bufferevent_setcb(con->ep[EI_SERVER].ev, 0, pt_svr_rdy_write, &pt_be_error, con);
+    bufferevent_enable(con->ep[EI_SERVER].ev, EV_WRITE);
 
-  /* Set a timeout */
-  timeout_set (&con->connect_timeout, &client_connect_timeout, con);
-  conn_timeout_tv.tv_sec = connect_timeout;
-  conn_timeout_tv.tv_usec = 0;
-  timeout_add (&con->connect_timeout, &conn_timeout_tv);
+    /* Set a timeout */
+    timeout_set(&con->connect_timeout, &client_connect_timeout, con);
+    conn_timeout_tv.tv_sec = connect_timeout;
+    conn_timeout_tv.tv_usec = 0;
+    timeout_add(&con->connect_timeout, &conn_timeout_tv);
 }
 
 static void dns_done(int result, char type, int count, int ttl, void *addresses, void *arg)
