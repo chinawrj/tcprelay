@@ -581,51 +581,53 @@ static void sockaddr_in_str (char *buf, const struct sockaddr *sa) {
   }
 }
 
-void start_socks (struct proxy_con *con) {
-  struct timeval conn_timeout_tv;
-  int fd_server, fd_client = con->ep[EI_CLIENT].fd;
-  char dststr[INET6_ADDRSTRLEN + 32];
+void start_socks(struct proxy_con *con)
+{
+    struct timeval conn_timeout_tv;
+    int fd_server, fd_client = con->ep[EI_CLIENT].fd;
+    char dststr[INET6_ADDRSTRLEN + 32];
 
-  sockaddr_in_str (dststr, (struct sockaddr *)&socks_addr);
-  client_error (con, 2, "connecting to SOCKS5 host %s", dststr);
+    sockaddr_in_str(dststr, (struct sockaddr *)&socks_addr);
+    client_error(con, 2, "connecting to SOCKS5 host %s", dststr);
 
-  /* prepare socket */
-  fd_server = socket (AF_INET, SOCK_STREAM, 0);
-  if (fd_server < 0)
-    return client_remove (con, "socket failed: %s (%d)", strerror(errno), errno);
+    /* prepare socket */
+    fd_server = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd_server < 0)
+        return client_remove(con, "socket failed: %s (%d)", strerror(errno), errno);
 
-  /* change sockets to non-blocking mode */ 
-  if (nonblock (fd_server, 1) != 0)
-    return client_remove (con, "nonblock failed: %s (%d)", strerror(errno), errno);
+    /* change sockets to non-blocking mode */ 
+    if (nonblock (fd_server, 1) != 0)
+        return client_remove(con, "nonblock failed: %s (%d)", strerror(errno), errno);
 
 do_connect:
-  /* Create the SOCKS-Client */
-  if (connect (fd_server, (struct sockaddr *)&socks_addr, sizeof (socks_addr)) != 0) {
-    if (errno == EINTR)
-      goto do_connect;
-    else if (errno == EINPROGRESS)
-      /* nothing */;
-    else 
-      return client_remove (con, "connect failed: %s (%d)", strerror(errno), errno);
-  }
+    /* Create the SOCKS-Client */
+    if (connect(fd_server, (struct sockaddr *)&socks_addr, sizeof (socks_addr)) != 0) {
+        if (errno == EINTR) {
+            goto do_connect;
+        } else if (errno == EINPROGRESS) {
+        /* nothing */;
+        } else {
+            return client_remove (con, "connect failed: %s (%d)", strerror(errno), errno);
+        }
+    }
 
-  /* Setup events for this new connection */
-  endpoint_init (con, EI_SERVER, fd_server);
-  be_setcb_connect (con->ep[EI_SERVER].ev, con);
-  
-  /* Submit a SOCKS5 Hello */
-  con->status = SOCKS5_HELLO;
+    /* Setup events for this new connection */
+    endpoint_init(con, EI_SERVER, fd_server);
+    be_setcb_connect(con->ep[EI_SERVER].ev, con);
 
-  /* Set a timeout */
-  timeout_set (&con->connect_timeout, &client_connect_timeout, con);
-  conn_timeout_tv.tv_sec = connect_timeout;
-  conn_timeout_tv.tv_usec = 0;
-  timeout_add (&con->connect_timeout, &conn_timeout_tv);
+    /* Submit a SOCKS5 Hello */
+    con->status = SOCKS5_HELLO;
 
-  /* Send HELLO and wait for a 2 byte response */
-  bufferevent_setwatermark (con->ep[EI_SERVER].ev, EV_READ, 2, READ_BUFFER);
-  bufferevent_write (con->ep[EI_SERVER].ev, "\x05\x01\x00", 3);
-  bufferevent_enable (con->ep[EI_SERVER].ev, EV_READ);
+    /* Set a timeout */
+    timeout_set(&con->connect_timeout, &client_connect_timeout, con);
+    conn_timeout_tv.tv_sec = connect_timeout;
+    conn_timeout_tv.tv_usec = 0;
+    timeout_add(&con->connect_timeout, &conn_timeout_tv);
+
+    /* Send HELLO and wait for a 2 byte response */
+    bufferevent_setwatermark(con->ep[EI_SERVER].ev, EV_READ, 2, READ_BUFFER);
+    bufferevent_write(con->ep[EI_SERVER].ev, "\x05\x01\x00", 3);
+    bufferevent_enable(con->ep[EI_SERVER].ev, EV_READ);
 }
 
 void start_passthrough(struct proxy_con *con)
