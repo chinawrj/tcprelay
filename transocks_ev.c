@@ -802,7 +802,7 @@ static void domain_lookup(char *domain, char *ipset)
     evdns_resolve_ipv4(domain, 0, &domain_lookup_done, ipset);
 }
 
-void white_list_handler(int fd, short event, void *arg) 
+void white_list_add_handler(int fd, short event, void *arg) 
 {
     int ret;
     char buffer[128], *newline;
@@ -821,7 +821,7 @@ void white_list_handler(int fd, short event, void *arg)
     printf("whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
 
-void black_list_handler(int fd, short event, void *arg) 
+void black_list_add_handler(int fd, short event, void *arg) 
 {
     int ret;
     char buffer[128], *newline;
@@ -840,6 +840,79 @@ void black_list_handler(int fd, short event, void *arg)
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
 
+static void domain_lookup_done_del(int result, char type, int count, int ttl, void *addresses, void *arg)
+{
+    unsigned char c;
+    int ret, i;
+
+    if (result != DNS_ERR_NONE) {
+        fprintf(stderr, "Del DNS lookup failed: %s", evdns_err_to_string(result));
+        return;
+    }
+    if (type != EVDNS_TYPE_A) {
+        fprintf(stderr, "Del DNS lookup failed: bad record type");
+        return;
+    }
+    if (count < 1) {
+        fprintf(stderr, "Del DNS lookup failed: no address");
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        printf("Del %s, IP[%d]: %u.%u.%u.%u\n",
+            (char*)arg,
+            i,
+            ((uint32_t*)(addresses))[i] & 0xff,
+            (((uint32_t*)(addresses))[i] >> 8) & 0xff,
+            (((uint32_t*)(addresses))[i] >> 16) & 0xff,
+            (((uint32_t*)(addresses))[i] >> 24) & 0xff
+        );
+        ipset_list_del(((uint32_t*)(addresses))[i], arg);
+    }
+}
+
+static void domain_lookup_del(char *domain, char *ipset)
+{
+    printf("lookup del dns %s, for %s\n", domain, ipset);
+    evdns_resolve_ipv4(domain, 0, &domain_lookup_done_del, ipset);
+}
+
+static void white_list_del_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 127);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        domain_lookup_del(buffer, "whitelist");
+    }
+    printf("Del whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
+}
+
+static void black_list_del_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 128);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        domain_lookup_del(buffer, "blacklist");
+    }
+    printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
+}
 int create_pidfile(const char *path)
 {
     int fd;
@@ -878,9 +951,9 @@ error:
 int main (int argc, char **argv)
 {
     struct sockaddr_in addr;
-    struct event ev_server, ev_white_fifo, ev_black_fifo;
+    struct event ev_server, ev_white_add_fifo, ev_black_add_fifo, ev_white_del_fifo, ev_black_del_fifo;
     int addrlen = sizeof (addr);
-    int serverfd = 0, whitelist_fd, blacklist_fd;
+    int serverfd = 0, whitelist_add_fd, blacklist_add_fd, whitelist_del_fd, blacklist_del_fd;
     int on = 1;
     int foreground = 0;
     char *pidfile = NULL;
@@ -890,16 +963,22 @@ int main (int argc, char **argv)
 
     short bindport = 7070;
     char *bindhost = "0.0.0.0";
-    char *white_list_fifo = "/tmp/white_list_fifo";  
-    char *black_list_fifo = "/tmp/black_list_fifo";  
+    char *white_list_add_fifo = "/tmp/white_list_add_fifo";  
+    char *black_list_add_fifo = "/tmp/black_list_add_fifo";  
+    char *white_list_del_fifo = "/tmp/white_list_del_fifo";  
+    char *black_list_del_fifo = "/tmp/black_list_del_fifo";  
 
     short socksport = 9050;
     char c;
 
-    unlink(white_list_fifo);
-    unlink(black_list_fifo);
-    mkfifo(white_list_fifo, 0666);
-    mkfifo(black_list_fifo, 0666);
+    unlink(white_list_add_fifo);
+    unlink(black_list_add_fifo);
+    unlink(white_list_del_fifo);
+    unlink(black_list_del_fifo);
+    mkfifo(white_list_add_fifo, 0666);
+    mkfifo(black_list_add_fifo, 0666);
+    mkfifo(white_list_del_fifo, 0666);
+    mkfifo(black_list_del_fifo, 0666);
 
     /* Parse the commandline */
     while ((c = getopt (argc, argv, "vfp:H:s:S:c:P:u:g:th")) != (char)EOF) {
@@ -1051,8 +1130,10 @@ int main (int argc, char **argv)
             return 1;
         }
     }
-    whitelist_fd = open(white_list_fifo, O_RDWR|O_NONBLOCK);
-    blacklist_fd = open(black_list_fifo, O_RDWR|O_NONBLOCK);
+    whitelist_add_fd = open(white_list_add_fifo, O_RDWR|O_NONBLOCK);
+    blacklist_add_fd = open(black_list_add_fifo, O_RDWR|O_NONBLOCK);
+    whitelist_del_fd = open(white_list_del_fifo, O_RDWR|O_NONBLOCK);
+    blacklist_del_fd = open(black_list_del_fifo, O_RDWR|O_NONBLOCK);
 
     /* it appears libevent bufferevent can cause a PIPE */
     signal (SIGPIPE, SIG_IGN);
@@ -1106,11 +1187,17 @@ int main (int argc, char **argv)
     event_set(&ev_server, serverfd, EV_READ, new_connection, &ev_server);
     event_add(&ev_server, NULL);
 
-    event_set(&ev_white_fifo, whitelist_fd, EV_READ | EV_PERSIST, white_list_handler, &ev_white_fifo);
-    event_add(&ev_white_fifo, NULL);
+    event_set(&ev_white_add_fifo, whitelist_add_fd, EV_READ | EV_PERSIST, white_list_add_handler, &ev_white_add_fifo);
+    event_add(&ev_white_add_fifo, NULL);
 
-    event_set(&ev_black_fifo, blacklist_fd, EV_READ | EV_PERSIST, black_list_handler, &ev_black_fifo);
-    event_add(&ev_black_fifo, NULL);
+    event_set(&ev_black_add_fifo, blacklist_add_fd, EV_READ | EV_PERSIST, black_list_add_handler, &ev_black_add_fifo);
+    event_add(&ev_black_add_fifo, NULL);
+
+    event_set(&ev_white_del_fifo, whitelist_del_fd, EV_READ | EV_PERSIST, white_list_del_handler, &ev_white_del_fifo);
+    event_add(&ev_white_del_fifo, NULL);
+
+    event_set(&ev_black_del_fifo, blacklist_del_fd, EV_READ | EV_PERSIST, black_list_del_handler, &ev_black_del_fifo);
+    event_add(&ev_black_del_fifo, NULL);
 
     event_dispatch();
 
