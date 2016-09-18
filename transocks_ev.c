@@ -900,7 +900,12 @@ static void white_list_add_handler(int fd, short event, void *arg)
         }
         white_list_file_add(buffer);
         openwrt_dns_restart();
-        domain_lookup(buffer, NULL);
+        if ('.' == buffer[0]) {
+            /*skip domain start with '.'*/
+            //empty
+        } else {
+            domain_lookup(buffer, NULL);
+        }
     }
     printf("whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
@@ -939,7 +944,12 @@ static void black_list_add_handler(int fd, short event, void *arg)
         }
         black_list_file_add(buffer);
         openwrt_dns_restart();
-        domain_lookup(buffer, "blacklist");
+        if ('.' == buffer[0]) {
+            /*skip domain start with '.'*/
+            //empty
+        } else {
+            domain_lookup(buffer, "blacklist");
+        }
     }
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
