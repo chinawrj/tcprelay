@@ -1059,7 +1059,13 @@ static void white_list_del_handler(int fd, short event, void *arg)
             *newline = '\0';
         }
         white_list_file_del(buffer);
-        domain_lookup_del(buffer, "whitelist");
+        openwrt_dns_restart();
+        if ('.' == buffer[0]) {
+            /*skip domain start with '.'*/
+            //empty
+        } else {
+            domain_lookup_del(buffer, "whitelist");
+        }
     }
     printf("Del whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
@@ -1097,7 +1103,13 @@ static void black_list_del_handler(int fd, short event, void *arg)
             *newline = '\0';
         }
         black_list_file_del(buffer);
-        domain_lookup_del(buffer, "blacklist");
+        openwrt_dns_restart();
+        if ('.' == buffer[0]) {
+            /*skip domain start with '.'*/
+            //empty
+        } else {
+            domain_lookup_del(buffer, "blacklist");
+        }
     }
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
