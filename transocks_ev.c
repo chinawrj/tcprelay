@@ -52,6 +52,8 @@
 #endif
 
 #define READ_BUFFER	4096
+#define CONFIG_FILE_WHITE_LIST "./white_list.conf"
+#define CONFIG_FILE_BLACK_LIST "./black_list.conf"
 
 enum {
   SOCKS5_HELLO,
@@ -840,7 +842,49 @@ static void domain_lookup(char *domain, char *ipset)
     evdns_resolve_ipv4(domain, 0, &domain_lookup_done, ipset);
 }
 
-void white_list_add_handler(int fd, short event, void *arg) 
+static void openwrt_dns_restart()
+{
+    int ret;
+    //FIXME very slow routine in call routine of libevent
+    ret = system("/etc/init.d/dnsmasq restart");
+    return;
+}
+
+static void white_list_file_add(char *domain)
+{
+    int ret;
+    char cmd[512];
+
+    printf("[%s] %s\n", __func__, domain);
+    ret = snprintf(cmd, sizeof(cmd), "echo ipset=/%s/whitelist >>" CONFIG_FILE_WHITE_LIST, domain);
+    if (ret > 510) {
+        //XXX reasonal handler is needed
+        printf("[ERR], domain too long: %s\n", domain);
+        return;
+    }
+    printf("cmd: %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
+static void black_list_file_add(char *domain)
+{
+    int ret;
+    char cmd[512];
+
+    printf("[%s] %s\n", __func__, domain);
+    ret = snprintf(cmd, sizeof(cmd), "echo ipset=/%s/blacklist >>" CONFIG_FILE_BLACK_LIST, domain);
+    if (ret > 510) {
+        //XXX reasonal handler is needed
+        printf("[ERR], domain too long: %s\n", domain);
+        return;
+    }
+    printf("cmd: %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
+static void white_list_add_handler(int fd, short event, void *arg) 
 {
     int ret;
     char buffer[128], *newline;
@@ -854,6 +898,8 @@ void white_list_add_handler(int fd, short event, void *arg)
         if (newline) {
             *newline = '\0';
         }
+        white_list_file_add(buffer);
+        openwrt_dns_restart();
         domain_lookup(buffer, NULL);
     }
     printf("whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
@@ -877,7 +923,7 @@ void white_list_ip_add_handler(int fd, short event, void *arg)
     }
 }
 
-void black_list_add_handler(int fd, short event, void *arg) 
+static void black_list_add_handler(int fd, short event, void *arg) 
 {
     int ret;
     char buffer[128], *newline;
@@ -891,6 +937,8 @@ void black_list_add_handler(int fd, short event, void *arg)
         if (newline) {
             *newline = '\0';
         }
+        black_list_file_add(buffer);
+        openwrt_dns_restart();
         domain_lookup(buffer, "blacklist");
     }
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
