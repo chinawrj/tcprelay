@@ -1319,9 +1319,6 @@ int main (int argc, char **argv)
     event_set(&ev_white_add_fifo, whitelist_add_fd, EV_READ | EV_PERSIST, white_list_add_handler, &ev_white_add_fifo);
     event_add(&ev_white_add_fifo, NULL);
 
-    event_set(&ev_white_add_fifo, whitelist_add_fd, EV_READ | EV_PERSIST, white_list_add_handler, &ev_white_add_fifo);
-    event_add(&ev_white_add_fifo, NULL);
-
     event_set(&ev_black_add_fifo, blacklist_add_fd, EV_READ | EV_PERSIST, black_list_add_handler, &ev_black_add_fifo);
     event_add(&ev_black_add_fifo, NULL);
 
