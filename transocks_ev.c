@@ -41,6 +41,8 @@
 #include <fcntl.h>
 #include <time.h>
 #include <inttypes.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 /* This caused errors on my maschine */
 /* #include <linux/netfilter_ipv4.h> */
@@ -537,6 +539,42 @@ static void svr_rdy_read (struct bufferevent *ev, void *arg) {
   } 
 }
 
+static void ipset_list_ip_add(char *ip, char *name)
+{
+    char cmd[128];
+    int ret;
+
+    printf("[%s] ipaddress is %s\n",
+        __func__,
+        ip
+    );
+    sprintf(cmd, "ipset add %s %s",
+        name,
+        ip
+    );
+    printf("[ipset] %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
+static void ipset_list_ip_del(char *ip, char *name)
+{
+    char cmd[128];
+    int ret;
+
+    printf("[%s] ipaddress is %s\n",
+        __func__,
+        ip
+    );
+    sprintf(cmd, "ipset del %s %s",
+        name,
+        ip
+    );
+    printf("[ipset] %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
 static void be_setcb_connect (struct bufferevent *ev, struct proxy_con *con) {
   bufferevent_setcb (ev, &svr_rdy_read, 0, &be_error, con);
 }
@@ -821,6 +859,24 @@ void white_list_add_handler(int fd, short event, void *arg)
     printf("whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
 
+void white_list_ip_add_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 127);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        ipset_list_ip_add(buffer, "whitelist");
+    }
+}
+
 void black_list_add_handler(int fd, short event, void *arg) 
 {
     int ret;
@@ -838,6 +894,24 @@ void black_list_add_handler(int fd, short event, void *arg)
         domain_lookup(buffer, "blacklist");
     }
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
+}
+
+void black_list_ip_add_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 127);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        ipset_list_ip_add(buffer, "blacklist");
+    }
 }
 
 static void domain_lookup_done_del(int result, char type, int count, int ttl, void *addresses, void *arg)
@@ -895,6 +969,24 @@ static void white_list_del_handler(int fd, short event, void *arg)
     printf("Del whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
 
+static void white_list_ip_del_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 127);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        ipset_list_ip_del(buffer, "whitelist");
+    }
+}
+
 static void black_list_del_handler(int fd, short event, void *arg) 
 {
     int ret;
@@ -913,6 +1005,25 @@ static void black_list_del_handler(int fd, short event, void *arg)
     }
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
 }
+
+static void black_list_ip_del_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[128], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 127);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        ipset_list_ip_del(buffer, "blacklist");
+    }
+}
+
 int create_pidfile(const char *path)
 {
     int fd;
@@ -952,8 +1063,10 @@ int main (int argc, char **argv)
 {
     struct sockaddr_in addr;
     struct event ev_server, ev_white_add_fifo, ev_black_add_fifo, ev_white_del_fifo, ev_black_del_fifo;
+    struct event ev_white_ip_add_fifo, ev_black_ip_add_fifo, ev_white_ip_del_fifo, ev_black_ip_del_fifo;
     int addrlen = sizeof (addr);
     int serverfd = 0, whitelist_add_fd, blacklist_add_fd, whitelist_del_fd, blacklist_del_fd;
+    int whitelist_ip_add_fd, blacklist_ip_add_fd, whitelist_ip_del_fd, blacklist_ip_del_fd;
     int on = 1;
     int foreground = 0;
     char *pidfile = NULL;
@@ -967,6 +1080,10 @@ int main (int argc, char **argv)
     char *black_list_add_fifo = "/tmp/black_list_add_fifo";  
     char *white_list_del_fifo = "/tmp/white_list_del_fifo";  
     char *black_list_del_fifo = "/tmp/black_list_del_fifo";  
+    char *white_list_ip_add_fifo = "/tmp/white_list_ip_add_fifo";  
+    char *black_list_ip_add_fifo = "/tmp/black_list_ip_add_fifo";  
+    char *white_list_ip_del_fifo = "/tmp/white_list_ip_del_fifo";  
+    char *black_list_ip_del_fifo = "/tmp/black_list_ip_del_fifo";  
 
     short socksport = 9050;
     char c;
@@ -975,10 +1092,18 @@ int main (int argc, char **argv)
     unlink(black_list_add_fifo);
     unlink(white_list_del_fifo);
     unlink(black_list_del_fifo);
+    unlink(white_list_ip_add_fifo);
+    unlink(black_list_ip_add_fifo);
+    unlink(white_list_ip_del_fifo);
+    unlink(black_list_ip_del_fifo);
     mkfifo(white_list_add_fifo, 0666);
     mkfifo(black_list_add_fifo, 0666);
     mkfifo(white_list_del_fifo, 0666);
     mkfifo(black_list_del_fifo, 0666);
+    mkfifo(white_list_ip_add_fifo, 0666);
+    mkfifo(black_list_ip_add_fifo, 0666);
+    mkfifo(white_list_ip_del_fifo, 0666);
+    mkfifo(black_list_ip_del_fifo, 0666);
 
     /* Parse the commandline */
     while ((c = getopt (argc, argv, "vfp:H:s:S:c:P:u:g:th")) != (char)EOF) {
@@ -1134,6 +1259,10 @@ int main (int argc, char **argv)
     blacklist_add_fd = open(black_list_add_fifo, O_RDWR|O_NONBLOCK);
     whitelist_del_fd = open(white_list_del_fifo, O_RDWR|O_NONBLOCK);
     blacklist_del_fd = open(black_list_del_fifo, O_RDWR|O_NONBLOCK);
+    whitelist_ip_add_fd = open(white_list_ip_add_fifo, O_RDWR|O_NONBLOCK);
+    blacklist_ip_add_fd = open(black_list_ip_add_fifo, O_RDWR|O_NONBLOCK);
+    whitelist_ip_del_fd = open(white_list_ip_del_fifo, O_RDWR|O_NONBLOCK);
+    blacklist_ip_del_fd = open(black_list_ip_del_fifo, O_RDWR|O_NONBLOCK);
 
     /* it appears libevent bufferevent can cause a PIPE */
     signal (SIGPIPE, SIG_IGN);
@@ -1180,12 +1309,15 @@ int main (int argc, char **argv)
         evdns_init ();
         randfd = open ("/dev/urandom", O_RDONLY);
         if (randfd == -1) {
-            fprintf (stderr, "can't open /dev/urandom: %s (%d). continuing, but will not randomize dns replies.\n");
+            fprintf (stderr, "can't open /dev/urandom. continuing, but will not randomize dns replies.\n");
         }
     }
 
     event_set(&ev_server, serverfd, EV_READ, new_connection, &ev_server);
     event_add(&ev_server, NULL);
+
+    event_set(&ev_white_add_fifo, whitelist_add_fd, EV_READ | EV_PERSIST, white_list_add_handler, &ev_white_add_fifo);
+    event_add(&ev_white_add_fifo, NULL);
 
     event_set(&ev_white_add_fifo, whitelist_add_fd, EV_READ | EV_PERSIST, white_list_add_handler, &ev_white_add_fifo);
     event_add(&ev_white_add_fifo, NULL);
@@ -1198,6 +1330,18 @@ int main (int argc, char **argv)
 
     event_set(&ev_black_del_fifo, blacklist_del_fd, EV_READ | EV_PERSIST, black_list_del_handler, &ev_black_del_fifo);
     event_add(&ev_black_del_fifo, NULL);
+
+    event_set(&ev_white_ip_add_fifo, whitelist_ip_add_fd, EV_READ | EV_PERSIST, white_list_ip_add_handler, &ev_white_ip_add_fifo);
+    event_add(&ev_white_ip_add_fifo, NULL);
+
+    event_set(&ev_black_ip_add_fifo, blacklist_ip_add_fd, EV_READ | EV_PERSIST, black_list_ip_add_handler, &ev_black_ip_add_fifo);
+    event_add(&ev_black_ip_add_fifo, NULL);
+
+    event_set(&ev_white_ip_del_fifo, whitelist_ip_del_fd, EV_READ | EV_PERSIST, white_list_ip_del_handler, &ev_white_ip_del_fifo);
+    event_add(&ev_white_ip_del_fifo, NULL);
+
+    event_set(&ev_black_ip_del_fifo, blacklist_ip_del_fd, EV_READ | EV_PERSIST, black_list_ip_del_handler, &ev_black_ip_del_fifo);
+    event_add(&ev_black_ip_del_fifo, NULL);
 
     event_dispatch();
 
