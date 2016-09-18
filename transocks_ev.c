@@ -867,6 +867,24 @@ static void white_list_file_add(char *domain)
     return;
 }
 
+static void white_list_file_del(char *domain)
+{
+    int ret;
+    char cmd[512];
+
+    printf("[%s] %s\n", __func__, domain);
+    ret = snprintf(cmd, sizeof(cmd),
+        "sed -i -e '/ipset=\\/%s\\/whitelist/d' " CONFIG_FILE_WHITE_LIST, domain);
+    if (ret > 510) {
+        //XXX reasonal handler is needed
+        printf("[ERR], domain too long: %s\n", domain);
+        return;
+    }
+    printf("cmd: %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
 static void black_list_file_add(char *domain)
 {
     int ret;
@@ -874,6 +892,24 @@ static void black_list_file_add(char *domain)
 
     printf("[%s] %s\n", __func__, domain);
     ret = snprintf(cmd, sizeof(cmd), "echo ipset=/%s/blacklist >>" CONFIG_FILE_BLACK_LIST, domain);
+    if (ret > 510) {
+        //XXX reasonal handler is needed
+        printf("[ERR], domain too long: %s\n", domain);
+        return;
+    }
+    printf("cmd: %s\n", cmd);
+    ret = system(cmd);
+    return;
+}
+
+static void black_list_file_del(char *domain)
+{
+    int ret;
+    char cmd[512];
+
+    printf("[%s] %s\n", __func__, domain);
+    ret = snprintf(cmd, sizeof(cmd),
+        "sed -i -e '/ipset=\\/%s\\/blacklist/d' " CONFIG_FILE_BLACK_LIST, domain);
     if (ret > 510) {
         //XXX reasonal handler is needed
         printf("[ERR], domain too long: %s\n", domain);
@@ -1022,6 +1058,7 @@ static void white_list_del_handler(int fd, short event, void *arg)
         if (newline) {
             *newline = '\0';
         }
+        white_list_file_del(buffer);
         domain_lookup_del(buffer, "whitelist");
     }
     printf("Del whitelist [%d]: %s\n", ret, ret > 0 ? buffer : "");
@@ -1059,6 +1096,7 @@ static void black_list_del_handler(int fd, short event, void *arg)
         if (newline) {
             *newline = '\0';
         }
+        black_list_file_del(buffer);
         domain_lookup_del(buffer, "blacklist");
     }
     printf("blacklist [%d]: %s\n", ret, ret > 0 ? buffer : "");
