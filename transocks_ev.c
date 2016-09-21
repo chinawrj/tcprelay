@@ -44,6 +44,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "log.h"
+
 /* This caused errors on my maschine */
 /* #include <linux/netfilter_ipv4.h> */
 
@@ -805,6 +807,27 @@ error:
     free(con);
 }
 
+static void dmsg_handler(int fd, short event, void *arg) 
+{
+    int ret;
+    char buffer[512], *newline;
+
+    /* Reschedule ourself */
+    //event_add (arg, NULL);
+    ret = read(fd, buffer, 511);
+    if (ret > 0) {
+        buffer[ret] = '\0';
+        newline = strchr(buffer, '\n');
+        if (newline) {
+            *newline = '\0';
+        }
+        if (log_dmsg_is_valid(buffer)) {
+            printf("[kernel] %s\n", buffer);
+            log_handle(buffer);
+        }
+    }
+}
+
 static void domain_lookup_done(int result, char type, int count, int ttl, void *addresses, void *arg)
 {
     unsigned char c;
@@ -1172,9 +1195,11 @@ int main (int argc, char **argv)
     struct sockaddr_in addr;
     struct event ev_server, ev_white_add_fifo, ev_black_add_fifo, ev_white_del_fifo, ev_black_del_fifo;
     struct event ev_white_ip_add_fifo, ev_black_ip_add_fifo, ev_white_ip_del_fifo, ev_black_ip_del_fifo;
+    struct event ev_dmesg;
     int addrlen = sizeof (addr);
     int serverfd = 0, whitelist_add_fd, blacklist_add_fd, whitelist_del_fd, blacklist_del_fd;
     int whitelist_ip_add_fd, blacklist_ip_add_fd, whitelist_ip_del_fd, blacklist_ip_del_fd;
+    int fd_dmsg;
     int on = 1;
     int foreground = 0;
     char *pidfile = NULL;
@@ -1192,6 +1217,7 @@ int main (int argc, char **argv)
     char *black_list_ip_add_fifo = "/tmp/black_list_ip_add_fifo";  
     char *white_list_ip_del_fifo = "/tmp/white_list_ip_del_fifo";  
     char *black_list_ip_del_fifo = "/tmp/black_list_ip_del_fifo";  
+    char *dmsg_path = "/dev/kmsg";  
 
     short socksport = 9050;
     char c;
@@ -1371,6 +1397,7 @@ int main (int argc, char **argv)
     blacklist_ip_add_fd = open(black_list_ip_add_fifo, O_RDWR|O_NONBLOCK);
     whitelist_ip_del_fd = open(white_list_ip_del_fifo, O_RDWR|O_NONBLOCK);
     blacklist_ip_del_fd = open(black_list_ip_del_fifo, O_RDWR|O_NONBLOCK);
+    fd_dmsg = open(dmsg_path, O_RDWR|O_NONBLOCK);
 
     /* it appears libevent bufferevent can cause a PIPE */
     signal (SIGPIPE, SIG_IGN);
@@ -1423,6 +1450,9 @@ int main (int argc, char **argv)
 
     event_set(&ev_server, serverfd, EV_READ, new_connection, &ev_server);
     event_add(&ev_server, NULL);
+
+    event_set(&ev_dmesg, fd_dmsg, EV_READ | EV_PERSIST, dmsg_handler, &ev_dmesg);
+    event_add(&ev_dmesg, NULL);
 
     event_set(&ev_white_add_fifo, whitelist_add_fd, EV_READ | EV_PERSIST, white_list_add_handler, &ev_white_add_fifo);
     event_add(&ev_white_add_fifo, NULL);

@@ -4,7 +4,7 @@ LIBEVENT_LIB_DIR=$(LIBEVENT_DIR)/lib
 LIBEVENT_INC_DIR=$(LIBEVENT_DIR)/include
 CFLAGS = -g -O2 -DSOCKS -I$(LIBEVENT_INC_DIR)
 
-OBJ = transocks_ev.o
+OBJ = transocks_ev.o log.o
 
 all: transocks_ev
 
